@@ -79,13 +79,15 @@ if (log_id && leaf_id) {
 }
 
 const plant_ids = blk_ids.filter(id => blks[id].plant);
+
+const plant_pool = plant_ids.flatMap(id => blks[id].name.startsWith('gp-flower-') ? [id] : [id, id, id, id]);
 const plant_chance = 0.14;
 if (plant_ids.length) {
   for (let x = -world_sz / 2; x < world_sz / 2; x++) for (let z = -world_sz / 2; z < world_sz / 2; z++) {
     const h = col_top.get(`${x},${z}`);
     if (h === undefined || world.get(key(x, h, z))?.type !== grass_id || world.has(key(x, h + 1, z))) continue;
     if (hash(x + 3000, z - 3000) > plant_chance) continue;
-    const id = plant_ids[Math.floor(hash(x - 4000, z + 4000) * plant_ids.length)];
+    const id = plant_pool[Math.floor(hash(x - 4000, z + 4000) * plant_pool.length)];
     world.set(key(x, h + 1, z), { type: id });
     col_top.set(`${x},${z}`, h + 1);
   }
@@ -115,7 +117,7 @@ function spread_grass() {
   for (const [x, y, z] of to_grass) {
     set_blk(x, y, z, grass_id);
     if (plant_ids.length && Math.random() < sprout_chance && !world.has(key(x, y + 1, z)))
-      set_blk(x, y + 1, z, plant_ids[Math.floor(Math.random() * plant_ids.length)]);
+      set_blk(x, y + 1, z, plant_pool[Math.floor(Math.random() * plant_pool.length)]);
   }
 }
 const sprout_chance = 0.2;

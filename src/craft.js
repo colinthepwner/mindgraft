@@ -23,6 +23,15 @@ const recipe_defs = [
   { any: { leaf: 1 }, out: 'gp-grass', n: 2 },
   { any: { leaf: 2 }, out: 'gp-lilgrass', n: 2 },
   { any: { dirt: 1, 'gp-grass': 1 }, out: 'grass', n: 1 },
+
+  { any: { 'gp-grass': 1, sand: 1 }, out: 'gp-flower-daisy', n: 1 },
+  { any: { 'gp-grass': 1, log: 1 }, out: 'gp-flower-tulip', n: 1 },
+  { any: { 'gp-grass': 1, glass: 1 }, out: 'gp-flower-bluebell', n: 1 },
+  { any: { 'gp-grass': 1, stone: 1 }, out: 'gp-flower-sunflower', n: 1 },
+  { any: { 'gp-lilgrass': 1, sand: 1 }, out: 'gp-flower-forgetmenot', n: 1 },
+  { any: { 'gp-lilgrass': 1, log: 1 }, out: 'gp-flower-redtulip', n: 1 },
+  { any: { 'gp-lilgrass': 1, glass: 1 }, out: 'gp-flower-poppy', n: 1 },
+  { any: { 'gp-lilgrass': 1, stone: 1 }, out: 'gp-flower-buttercup', n: 1 },
 ];
 const recipes = recipe_defs.map(r => ({ ...r, out_id: blk_ids.find(i => blks[i].name === r.out) })).filter(r => r.out_id);
 
