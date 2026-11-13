@@ -17,9 +17,12 @@ let inv_sig = '';
 let mx = 0, my = 0;
 
 const recipe_defs = [
-  { key: { s: 'stone' }, pat: ['ss', 'ss'], out: 'glass', n: 4 },
-  { key: { d: 'dirt' }, pat: ['ddd', 'ddd'], out: 'grass', n: 3 },
-  { key: { l: 'log' }, pat: ['l', 'l'], out: 'dirt', n: 4 },
+  { any: { sand: 4 }, out: 'glass', n: 1 },
+  { any: { glass: 1 }, out: 'water', n: 1 },
+  { any: { log: 1 }, out: 'leaf', n: 2 },
+  { any: { leaf: 1 }, out: 'gp-grass', n: 2 },
+  { any: { leaf: 2 }, out: 'gp-lilgrass', n: 2 },
+  { any: { dirt: 1, 'gp-grass': 1 }, out: 'grass', n: 1 },
 ];
 const recipes = recipe_defs.map(r => ({ ...r, out_id: blk_ids.find(i => blks[i].name === r.out) })).filter(r => r.out_id);
 
@@ -31,9 +34,13 @@ function find_recipe() {
     x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y);
   }
   if (x1 < 0) return null;
+
+  const have = {};
+  for (const n of blk_names) if (n) have[n] = (have[n] ?? 0) + 1;
+  for (const r of recipes) if (r.any && Object.keys(r.any).length === Object.keys(have).length && Object.entries(r.any).every(([n, c]) => have[n] === c)) return r;
   const w = x1 - x0 + 1, h = y1 - y0 + 1;
   for (const r of recipes) {
-    if (r.pat[0].length !== w || r.pat.length !== h) continue;
+    if (r.any || r.pat[0].length !== w || r.pat.length !== h) continue;
     for (const flip of [false, true]) {
       let ok = true;
       for (let y = 0; y < h && ok; y++) for (let x = 0; x < w; x++) {

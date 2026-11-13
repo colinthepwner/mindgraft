@@ -105,6 +105,32 @@ export function settle(x, z) {
   }
   for (const [bx, by, bz] of lost) pop_plant(bx, by, bz);
   decay_leaves(x, z);
+  roll(x, z);
+}
+
+function top_solid(x, z) {
+  let y = col_top.get(`${x},${z}`);
+  if (y === undefined) return undefined;
+  while (y >= world_bot && !solid_k(key(x, y, z))) y--;
+  return y;
+}
+function roll(cx, cz) {
+  for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) {
+    const x = cx + dx, z = cz + dz, y = top_solid(x, z);
+    if (y === undefined) continue;
+    const b = world.get(key(x, y, z));
+    if (!b || (b.type !== sand_id && b.type !== dirt_id)) continue;
+    const low = [];
+    for (const [ox, oz] of nbrs4) {
+      const t = top_solid(x + ox, z + oz);
+      if (t !== undefined && t <= y - 2) low.push([x + ox, z + oz]);
+    }
+    if (!low.length) continue;
+    const [nx, nz] = low[Math.floor(Math.random() * low.length)];
+    set_blk(x, y, z, 0);
+    pop_plant(x, y, z);
+    drop_group([{ x: nx, y, z: nz, type: b.type, entry: b }]);
+  }
 }
 function grab_crown(tx, tz, y_min, y_max) {
   const out = [];
