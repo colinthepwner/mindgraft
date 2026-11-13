@@ -6,6 +6,7 @@ const master = audio.createGain();
 master.gain.value = master_vol;
 master.connect(audio.destination);
 const snds = {};
+export const has_snd = name => !!snds[name];
 const norm_rms = 0.1;
 function norm_gain(buf) {
   let sum = 0, n = 0, peak = 0;

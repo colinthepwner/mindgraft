@@ -4,17 +4,20 @@ import { grav, key, solid_k } from './world.js';
 
 export const mpx = 1.8 / 32;
 const mob_mat = new THREE.MeshBasicMaterial({ color: 0x050505 });
-const face_px = [[1, 5], [6, 5], [2, 6], [3, 6], [4, 6], [5, 6],
-                     [1, 3],
-                     [5, 1], [6, 1], [5, 2], [6, 2]];
 
-function make_face() {
+export const faces = {
+  mob: [[1, 5], [6, 5], [2, 6], [3, 6], [4, 6], [5, 6], [1, 3], [5, 1], [6, 1], [5, 2], [6, 2]],
+  giant: [[1, 1], [2, 1], [3, 2], [4, 2], [5, 1], [6, 1], [2, 3], [5, 3], [1, 5], [2, 5], [3, 5], [4, 5], [5, 5], [6, 5], [1, 6], [6, 6], [2, 7], [3, 7], [4, 7], [5, 7]],
+};
+export const mob_skin = { skin: 0x050505, face: 'mob' };
+
+export function make_face(kind = 'mob') {
   const canvas = document.createElement('canvas');
   canvas.width = canvas.height = 8;
   const tex = new THREE.CanvasTexture(canvas);
   tex.magFilter = THREE.NearestFilter; tex.minFilter = THREE.NearestFilter;
   tex.colorSpace = THREE.SRGBColorSpace;
-  const face = { canvas, tex, key: '' };
+  const face = { canvas, tex, key: '', px: faces[kind] };
   paint_face(face, '#050505', '#ffffff');
   return face;
 }
@@ -25,7 +28,7 @@ export function paint_face(face, bg, fg) {
   const g = face.canvas.getContext('2d');
   g.fillStyle = bg; g.fillRect(0, 0, 8, 8);
   g.fillStyle = fg;
-  for (const [x, y] of face_px) g.fillRect(x, y, 1, 1);
+  for (const [x, y] of face.px) g.fillRect(x, y, 1, 1);
   face.tex.needsUpdate = true;
 }
 export const hex = c => '#' + c.getHexString();
@@ -46,10 +49,10 @@ const stump_spots = {
   head: [0, 24.12, 0, 4, 0.25, 4],
 };
 
-export function build_mob() {
+export function build_mob(kind = mob_skin) {
   const root = new THREE.Group();
-  const mats = Object.fromEntries(['head', 'body', 'arm_l', 'arm_r', 'leg_l', 'leg_r'].map(k => [k, mob_mat.clone()]));
-  const face = make_face();
+  const mats = Object.fromEntries(['head', 'body', 'arm_l', 'arm_r', 'leg_l', 'leg_r'].map(k => { const mt = mob_mat.clone(); mt.color.setHex(kind.skin); return [k, mt]; }));
+  const face = make_face(kind.face);
   const face_mat = new THREE.MeshBasicMaterial({ map: face.tex });
   const head = limb(8, 8, 8, 0, 24, 4, [mats.head, mats.head, mats.head, mats.head, face_mat, mats.head]);
   const body = limb(8, 12, 4, 0, 24, -6, mats.body);
@@ -81,9 +84,9 @@ export const rot_grey = 3, rot_brown = 8, rot_end = 12;
 const pieces = [];
 const c_skin = new THREE.Color(0x050505), c_grey = new THREE.Color(0x1b1908), c_brown = new THREE.Color(0x2c2409);
 const c_feat = new THREE.Color(0xffffff), c_feat_rot = new THREE.Color(0x77702f);
-export function rot(age, mats, face = null) {
+export function rot(age, mats, face = null, skin = c_skin) {
   const c = age < rot_grey
-    ? c_skin.clone().lerp(c_grey, age / rot_grey)
+    ? skin.clone().lerp(c_grey, age / rot_grey)
     : c_grey.clone().lerp(c_brown, Math.min(1, (age - rot_grey) / (rot_brown - rot_grey)));
   const fade = age < rot_brown ? 1 : Math.max(0, 1 - (age - rot_brown) / (rot_end - rot_brown));
   if (face) paint_face(face, hex(c), hex(c_feat.clone().lerp(c_feat_rot, Math.min(1, age / rot_brown))));
@@ -102,12 +105,12 @@ export function pop_off(m, name) {
   const wp = new THREE.Vector3(), wq = new THREE.Quaternion();
   mesh.getWorldPosition(wp); mesh.getWorldQuaternion(wq);
   const holder = new THREE.Group();
-  holder.position.copy(wp); holder.quaternion.copy(wq);
+  holder.position.copy(wp); holder.quaternion.copy(wq); holder.scale.setScalar(m.size);
   mesh.position.set(0, 0, 0);
   holder.add(mesh);
   scene.add(holder);
   const cache = new Map();
-  const piece_face = name === 'head' ? make_face() : null;
+  const piece_face = name === 'head' ? make_face(m.kind.face) : null;
   if (piece_face) paint_face(piece_face, hex(m.mats.head.color), '#ffffff');
   const dup = mt => {
     if (!cache.has(mt)) { const c = mt.clone(); if (c.map) c.map = piece_face.tex; cache.set(mt, c); }
@@ -119,12 +122,12 @@ export function pop_off(m, name) {
   out.normalize();
   const is_head = name === 'head', fling = 1.5 + Math.random() * 1.5;
   pieces.push({
-    holder, mats: [...cache.values()], face: piece_face, age: 0, landed: false, rest_q: null,
+    holder, mats: [...cache.values()], face: piece_face, skin: new THREE.Color(m.kind.skin), age: 0, landed: false, rest_q: null,
     vel: new THREE.Vector3(out.x * fling + m.kb.x * 0.3, 3.5 + Math.random() * 2.5, out.z * fling + m.kb.z * 0.3),
     spin: new THREE.Vector3((Math.random() - 0.5) * 14, (Math.random() - 0.5) * 14, (Math.random() - 0.5) * 14),
     long: !is_head,
-    air: is_head ? 0.225 : 0.15,
-    rest: is_head ? 0.225 : 0.1125,
+    air: (is_head ? 0.225 : 0.15) * m.size,
+    rest: (is_head ? 0.225 : 0.1125) * m.size,
   });
 }
 
@@ -150,7 +153,7 @@ export function tick_pieces(dt) {
     } else {
       h.quaternion.slerp(p.rest_q, Math.min(1, dt * 12));
     }
-    rot(p.age, p.mats, p.face);
+    rot(p.age, p.mats, p.face, p.skin);
     if (p.age >= rot_end || h.position.y < -40) {
       scene.remove(h);
       for (const mt of p.mats) mt.dispose();

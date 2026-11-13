@@ -176,7 +176,7 @@ const overlaps = (cx, cy, cz, px, py, pz, half, height) =>
   Math.abs(cx - px) < 0.5 + half && Math.abs(cz - pz) < 0.5 + half && cy + 0.5 > py && cy - 0.5 < py + height;
 function squish(type, cx, cy, cz, speed) {
   const hit_plr = overlaps(cx, cy, cz, player.pos.x, player.pos.y, player.pos.z, plr_half, plr_h);
-  const hit_mobs = mobs.filter(m => !m.dead && !m.fate && m.parts.head.alive && overlaps(cx, cy, cz, m.pos.x, m.pos.y + m.rig.position.y, m.pos.z, 0.4, plr_h));
+  const hit_mobs = mobs.filter(m => !m.dead && !m.fate && m.parts.head.alive && overlaps(cx, cy, cz, m.pos.x, m.pos.y + m.rig.position.y * m.size, m.pos.z, 0.4 * m.size, plr_h * m.size));
   if (!hit_plr && !hit_mobs.length) return 'none';
   const w = wt_of(type);
   if (w === 0) return 'broken';

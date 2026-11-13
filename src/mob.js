@@ -1,27 +1,44 @@
 import * as THREE from 'three';
-import { spurt } from './fx.js';
+import { chips, spurt } from './fx.js';
+import { spawn_drop } from './drops.js';
 import { world_sz, spawn_pt } from './gen.js';
 import { scene } from './gfx.js';
-import { mpx, rot_end, stump_red, scab, rot, build_mob, pop_off, hex, paint_face, swing_limbs } from './mob_model.js';
+import { mpx, rot_end, stump_red, scab, rot, build_mob, pop_off, hex, paint_face, swing_limbs, mob_skin } from './mob_model.js';
 import { eugh_vol, eye_h, plr_h, jump_v, plr_hop, ouch_cd, ouch_vol, invuln_t, plr_kb, max_hp, box_hits, player } from './player.js';
-import { play_snd, stop_voice } from './sound.js';
-import { grav, col_top } from './world.js';
+import { blks, drop_of } from './blocks.js';
+import { settle } from './support.js';
+import { has_snd, play_snd, stop_voice } from './sound.js';
+import { grav, col_top, key, set_blk, world } from './world.js';
 
 const mob_half = 0.5, mob_spd = 1.6;
 export const mobs = [];
 const limb_hp = 6;
 const part_hp = { head: 10, body: limb_hp * 2.5, arm_l: limb_hp, arm_r: limb_hp, leg_l: limb_hp, leg_r: limb_hp };
-function spawn_mob(x, z) {
-  const m = build_mob();
+
+const kinds = {
+  mob: { name: 'mob', ...mob_skin, size: 1, hp: 1, spd: 1, kb: 1, pitch: 1, humanoid: true },
+  giant: { name: 'giant', skin: 0x2b0f3d, face: 'giant', size: 2, hp: 3, spd: 0.7, kb: 0.15, pitch: 0.6, humanoid: true, smash: true },
+};
+
+function top_under(x, z, size) {
+  const r = Math.ceil(mob_half * size);
+  let top = -Infinity;
+  for (let dx = -r; dx <= r; dx++) for (let dz = -r; dz <= r; dz++) top = Math.max(top, col_top.get(`${x + dx},${z + dz}`) ?? 0);
+  return top;
+}
+function spawn_mob(x, z, kind = kinds.mob) {
+  const m = build_mob(kind);
+  m.root.scale.setScalar(kind.size);
   Object.assign(m, {
-    pos: new THREE.Vector3(x, (col_top.get(`${x},${z}`) ?? 0) + 2, z),
+    kind, size: kind.size, skin_c: new THREE.Color(kind.skin),
+    pos: new THREE.Vector3(x, top_under(x, z, kind.size) + 2, z),
     vel: new THREE.Vector3(), on_ground: false,
     yaw: Math.random() * Math.PI * 2,
     head_yaw: 0, head_pitch: 0,
     state: 'idle', timer: 1 + Math.random() * 2, glance_len: 0,
     dir: [0, 1], blocked_t: 0, phase: 0, swing: 0,
     kb: new THREE.Vector3(), hurt_t: 0,
-    parts: Object.fromEntries(Object.entries(part_hp).map(([k, hp]) => [k, { hp, alive: true }])),
+    parts: Object.fromEntries(Object.entries(part_hp).map(([k, hp]) => [k, { hp: hp * kind.hp, alive: true }])),
     aggro: 0,
     atk_cd: 0, atk_t: 1,
     atk_kind: 'punch', atk_rate: 1, strike_at: 0.5, struck: true, punch_arm: 'arm_l', atk_dmg: 0,
@@ -36,17 +53,17 @@ function spawn_mob(x, z) {
   });
   mobs.push(m);
 }
-spawn_mob(6, 6);
-
-function respawn_mob() {
-  const lim = world_sz / 2 - 6;
+function respawn_mob(kind = kinds.mob) {
+  const lim = world_sz / 2 - 6, away = kind.size > 1 ? 30 : 12;
   for (let tries = 0; tries < 20; tries++) {
     const x = Math.round((Math.random() * 2 - 1) * lim), z = Math.round((Math.random() * 2 - 1) * lim);
-    if (Math.hypot(x - player.pos.x, z - player.pos.z) < 12) continue;
-    return spawn_mob(x, z);
+    if (Math.hypot(x - player.pos.x, z - player.pos.z) < away) continue;
+    return spawn_mob(x, z, kind);
   }
-  spawn_mob(6, 6);
+  spawn_mob(6, 6, kind);
 }
+spawn_mob(6, 6);
+respawn_mob(kinds.giant);
 
 export const punch_reach = 4, punch_kb = 7, punch_hop = 6, flash_len = 0.4;
 const punch_dmg = 1;
@@ -75,17 +92,26 @@ function twitch(m, name, dt, [t_min, t_max], amps, rate) {
   st.v = st.v.map((v, i) => v + (st.target[i] - v) * Math.min(1, dt * rate));
   return st.v;
 }
-const mouth = m => new THREE.Vector3(m.pos.x, m.pos.y + 1.4, m.pos.z);
+const mouth = m => new THREE.Vector3(m.pos.x, m.pos.y + 1.4 * m.size, m.pos.z);
 
 const brain_depth = m => m && m.fate === 'brain' ? Math.min(1, m.fate_t / brain_t) : 0;
 const deep_pitch = 0.5;
 const bend_max = 0.12;
 const brain_bend = m => bend_max * brain_depth(m);
-function falloff(scream, m) {
-  const name = Math.random() < 0.5 ? 'falloff1' : 'falloff2';
-  const rate = (scream ? scream_pitch : 1) * (1 - deep_pitch * brain_depth(m));
-  play_snd(name, rate, falloff_vol, false, { exclusive: true, voice: 'falloff', at: mouth(m), bend: brain_bend(m) });
+
+const fallback = { hurt: ['eugh'], falloff: ['falloff1', 'falloff2'] };
+function say(m, what, rate, vol, opts) {
+  const own = m.kind.name + '_' + what;
+  if (has_snd(own)) return play_snd(own, rate, vol, false, opts);
+  if (!m.kind.humanoid) return;
+  const list = fallback[what];
+  play_snd(list[Math.floor(Math.random() * list.length)], rate * m.kind.pitch, vol, false, opts);
 }
+function falloff(scream, m) {
+  const rate = (scream ? scream_pitch : 1) * (1 - deep_pitch * brain_depth(m));
+  say(m, 'falloff', rate, falloff_vol, { exclusive: true, voice: 'falloff', at: mouth(m), bend: brain_bend(m) });
+}
+const ouch = m => say(m, 'hurt', 1 - deep_pitch * brain_depth(m), eugh_vol, { exclusive: true, voice: 'hurt', at: mouth(m), bend: brain_bend(m) });
 const part_boxes = {
   head: [-4, 24, -4, 4, 32, 4], body: [-4, 12, -2, 4, 24, 2],
   arm_l: [-8, 12, -2, -4, 24, 2], arm_r: [4, 12, -2, 8, 24, 2],
@@ -99,11 +125,12 @@ export function ray_mobs(origin, dir, max_d) {
     const to_local = (x, z) => [x * c - z * sn, x * sn + z * c];
     const [ox, oz] = to_local(origin.x - m.pos.x, origin.z - m.pos.z);
     const [dx, dz] = to_local(dir.x, dir.z);
-    let o = [ox, origin.y - m.pos.y - m.rig.position.y, oz], d = [dx, dir.y, dz];
+    let o = [ox, origin.y - m.pos.y - m.rig.position.y * m.size, oz], d = [dx, dir.y, dz];
     if (m.lie > 0.5) {
-      o = [ox, -oz - m.rig.position.y, origin.y - m.pos.y - 0.2 * m.lie];
+      o = [ox, -oz - m.rig.position.y * m.size, origin.y - m.pos.y - 0.2 * m.lie * m.size];
       d = [dx, -dz, dir.y];
     }
+    o = o.map(v => v / m.size); d = d.map(v => v / m.size);
     for (const [name, b] of Object.entries(part_boxes)) {
       if (!m.parts[name].alive) continue;
       const lo = [b[0] * mpx, b[1] * mpx, b[2] * mpx], hi = [b[3] * mpx, b[4] * mpx, b[5] * mpx];
@@ -123,7 +150,7 @@ export function hurt_part(m, part, hearts_el) {
   const p = m.parts[part];
   if (!p.alive) return;
   m.hurt_t = flash_len; m.last_hit = part;
-  play_snd('eugh', 1 - deep_pitch * brain_depth(m), eugh_vol, false, { exclusive: true, at: mouth(m), bend: brain_bend(m) });
+  ouch(m);
   p.hp -= hearts_el;
   if (p.hp <= 0) wreck_part(m, part);
 }
@@ -131,13 +158,13 @@ export function punch_mob(m, part, at = null) {
   let dx = m.pos.x - player.pos.x, dz = m.pos.z - player.pos.z;
   const len = Math.hypot(dx, dz) || 1;
   dx /= len; dz /= len;
-  m.kb.set(dx * punch_kb, 0, dz * punch_kb);
-  if (m.on_ground) { m.vel.y = punch_hop; m.on_ground = false; }
+  m.kb.set(dx * punch_kb * m.kind.kb, 0, dz * punch_kb * m.kind.kb);
+  if (m.on_ground) { m.vel.y = punch_hop * Math.max(0.4, m.kind.kb); m.on_ground = false; }
   m.hurt_t = flash_len;
   m.last_hit = part;
   m.aggro = aggro_t;
   m.atk_cd = Math.max(m.atk_cd, 0.5);
-  play_snd('eugh', 1 - deep_pitch * brain_depth(m), eugh_vol, false, { exclusive: true, at: mouth(m), bend: brain_bend(m) });
+  ouch(m);
   if (at) spurt(at, 5, 2.2, new THREE.Vector3(dx, 0.3, dz));
   const p = m.parts[part];
   p.hp -= punch_dmg;
@@ -203,7 +230,7 @@ function kill_mob(m, shut_up = false) {
   };
   m.death_lie0 = m.lie;
   m.death_roll0 = m.rig.rotation.y;
-  setTimeout(respawn_mob, respawn_ms);
+  setTimeout(() => respawn_mob(m.kind), respawn_ms);
 }
 
 export function hurt_plr(amount, from) {
@@ -248,7 +275,7 @@ function tick_corpse(m, dt) {
   for (const axis of ['x', 'y', 'z']) {
     const next = m.pos.clone();
     next[axis] += m.vel[axis] * dt;
-    if (box_hits(next, mob_half, plr_h)) m.vel[axis] = 0;
+    if (box_hits(next, mob_half * m.size, plr_h * m.size)) m.vel[axis] = 0;
     else m.pos[axis] = next[axis];
   }
   drip(m, dt);
@@ -257,7 +284,7 @@ function tick_corpse(m, dt) {
   const tilt = m.death_lie0 + (1 - m.death_lie0) * fall * fall;
   m.root.rotation.order = 'YXZ';
   m.root.rotation.x = -tilt * Math.PI / 2;
-  m.root.position.set(m.pos.x, m.pos.y + tilt * 0.2, m.pos.z);
+  m.root.position.set(m.pos.x, m.pos.y + tilt * 0.2 * m.size, m.pos.z);
   const tt = Math.max(0, m.dead_t - 0.05);
   const go = 1 - Math.exp(-5 * tt) * Math.cos(14 * tt);
   const mix = (a, b) => a + (b - a) * go;
@@ -270,10 +297,10 @@ function tick_corpse(m, dt) {
   m.rig.rotation.y = m.death_roll0 + (face_up - m.death_roll0) * Math.min(1, m.dead_t / 0.5);
   const mats = [...Object.values(m.mats), m.face_mat, ...Object.values(m.stump_mats)];
   if (m.dead_t < 0.35) {
-    for (const k in m.mats) m.mats[k].color.setHex(k === m.last_hit ? 0xcc2222 : 0x050505);
-    paint_face(m.face, m.last_hit === 'head' ? '#cc2222' : '#050505', '#ffffff');
+    for (const k in m.mats) m.mats[k].color.setHex(k === m.last_hit ? 0xcc2222 : m.kind.skin);
+    paint_face(m.face, m.last_hit === 'head' ? '#cc2222' : hex(m.skin_c), '#ffffff');
   } else {
-    rot(m.dead_t - 0.35, mats, m.face);
+    rot(m.dead_t - 0.35, mats, m.face, m.skin_c);
   }
   if (m.dead_t >= rot_end) {
     scene.remove(m.root);
@@ -294,6 +321,37 @@ function butt_curve(t) {
   return 1.1 * (1 - (t - 0.8) / 0.2);
 }
 
+const smash_rate = 0.9, smash_hit = 0.62, smash_cd = 2, smash_dmg = 6;
+const smash_fwd = 1.2, smash_r2 = 5;
+function smash_curve(t) {
+  if (t < 0.5) return -2.9 * (t / 0.5);
+  if (t < 0.62) return -2.9 + 3.1 * ((t - 0.5) / 0.12);
+  if (t < 0.8) return 0.2;
+  return 0.2 * (1 - (t - 0.8) / 0.2);
+}
+function giant_smash(m) {
+  const ix = Math.round(m.pos.x + Math.sin(m.yaw) * smash_fwd * m.size), iz = Math.round(m.pos.z + Math.cos(m.yaw) * smash_fwd * m.size);
+  const gy = Math.round(m.pos.y - 0.6);
+  const hit_at = new THREE.Vector3(ix, gy + 0.5, iz), ground = world.get(key(ix, gy, iz));
+  for (let dx = -2; dx <= 2; dx++) for (let dz = -2; dz <= 2; dz++) {
+    if (dx * dx + dz * dz > smash_r2) continue;
+    for (let y = gy - 1; y <= gy + 3; y++) {
+      const x = ix + dx, z = iz + dz, b = world.get(key(x, y, z));
+      if (!b || blks[b.type].name === 'stone') continue;
+      set_blk(x, y, z, 0);
+      chips(x, y, z, b.type, 2, 0.7);
+      const id = drop_of(b.type);
+      if (id && Math.random() < 0.35) spawn_drop(id, x, y, z);
+    }
+  }
+  settle(ix, iz);
+  if (has_snd('giant_smash')) play_snd('giant_smash', 1, 1, false, { at: hit_at, voice: 'smash' });
+  else play_snd(ground ? blks[ground.type].name : 'dirt', 0.5, 1, false, { at: hit_at, voice: 'smash' });
+  const d = Math.hypot(player.pos.x - ix, player.pos.z - iz);
+  player.shake = Math.max(player.shake, 14 * Math.max(0, 1 - d / 25));
+  if (d <= 2.8 && Math.abs(player.pos.y - m.pos.y) < 3) hurt_plr(smash_dmg, m.pos);
+}
+
 export function tick_mobs(dt) {
   for (const m of [...mobs]) {
     if (m.dead) { tick_corpse(m, dt); continue; }
@@ -307,7 +365,7 @@ export function tick_mobs(dt) {
     const noise_amp = m.fate === 'brain' ? Math.PI * Math.min(1, m.fate_t / spaz_at) : m.fate === 'headless' ? stumble : 0;
     m.noise_t -= dt;
     if (m.noise_t <= 0) { m.noise_t = 0.25 + Math.random() * 0.2; m.noise = (Math.random() * 2 - 1) * noise_amp; }
-    const head_pos = new THREE.Vector3(m.pos.x, m.pos.y + 28 * mpx + m.rig.position.y, m.pos.z);
+    const head_pos = new THREE.Vector3(m.pos.x, m.pos.y + (28 * mpx + m.rig.position.y) * m.size, m.pos.z);
     const interest = nearest(m);
     const goal = new THREE.Vector3(head_pos.x + m.dir[0] * 6, head_pos.y, head_pos.z + m.dir[1] * 6);
     let look = null;
@@ -317,6 +375,7 @@ export function tick_mobs(dt) {
     m.atk_cd = Math.max(0, m.atk_cd - dt);
     const to_plr = new THREE.Vector3(player.pos.x - m.pos.x, 0, player.pos.z - m.pos.z);
     const plr_dist = to_plr.length();
+    if (m.kind.smash && plr_dist < 30) m.aggro = Math.max(m.aggro, 1);
     const limbless = !['arm_l', 'arm_r', 'leg_l', 'leg_r'].some(k => m.parts[k].alive);
     const chasing = m.aggro > 0 && plr_dist > 0.01 && !limbless && !spazzing;
     const rolling = limbless && !spazzing;
@@ -352,7 +411,7 @@ export function tick_mobs(dt) {
       m.dir = [Math.sin(aim), Math.cos(aim)];
       look = new THREE.Vector3(player.pos.x, player.pos.y + eye_h, player.pos.z);
       m.state = 'idle'; m.timer = 0.3;
-      if (plr_dist > atk_range) walking = true; else walking = false;
+      if (plr_dist > atk_range * m.size) walking = true; else walking = false;
     } else if (m.state === 'idle') {
       look = interest;
       if (m.timer <= 0) {
@@ -389,11 +448,11 @@ export function tick_mobs(dt) {
     m.hop_t = Math.max(0, m.hop_t - dt);
     if (legless && walking && m.on_ground && m.hop_t <= 0) { m.vel.y = stump_hop; m.on_ground = false; m.hop_t = stump_pause + 2 * stump_hop / grav; }
     const travelling = !legless || !m.on_ground;
-    const speed = (chasing ? chase_spd : mob_spd) * (legs === 1 ? one_leg : legless ? stump_air : 1);
+    const speed = (chasing ? chase_spd : mob_spd) * m.kind.spd * (legs === 1 ? one_leg : legless ? stump_air : 1);
     m.vel.x = (rolling ? m.dir[0] * m.roll_spd : walking && travelling ? m.dir[0] * speed : 0) + m.kb.x;
     m.vel.z = (rolling ? m.dir[1] * m.roll_spd : walking && travelling ? m.dir[1] * speed : 0) + m.kb.z;
     m.hurt_t = Math.max(0, m.hurt_t - dt);
-    for (const k in m.mats) m.mats[k].color.setHex(m.hurt_t > 0 && k === m.last_hit ? 0xcc2222 : 0x050505);
+    for (const k in m.mats) m.mats[k].color.setHex(m.hurt_t > 0 && k === m.last_hit ? 0xcc2222 : m.kind.skin);
     paint_face(m.face, m.hurt_t > 0 && m.last_hit === 'head' ? '#cc2222' : hex(m.mats.head.color), '#ffffff');
     m.rig.position.y += (-(legless ? 12 * mpx : 0) - m.rig.position.y) * Math.min(1, dt * 10);
     m.vel.y -= grav * dt;
@@ -403,7 +462,7 @@ export function tick_mobs(dt) {
     for (const axis of ['x', 'y', 'z']) {
       const next = m.pos.clone();
       next[axis] += m.vel[axis] * dt;
-      if (box_hits(next, mob_half, plr_h)) {
+      if (box_hits(next, mob_half * m.size, plr_h * m.size)) {
         if (axis === 'y') { m.on_ground = m.vel.y < 0; m.vel.y = 0; } else blocked = true;
       } else {
         m.pos[axis] = next[axis];
@@ -442,9 +501,13 @@ export function tick_mobs(dt) {
     }
 
     const arms_left = ['arm_l', 'arm_r'].filter(a => m.parts[a].alive);
-    if (chasing && (arms_left.length || m.parts.head.alive) && m.atk_t >= 1 && m.atk_cd <= 0 && plr_dist <= atk_range && Math.abs(player.pos.y - m.pos.y) < 1.2) {
+    const reach = plr_dist <= atk_range * m.size && Math.abs(player.pos.y - m.pos.y) < 1.2 * m.size;
+    const walled = m.kind.smash && m.blocked_t > 0.3;
+    if (chasing && (arms_left.length || m.parts.head.alive) && m.atk_t >= 1 && m.atk_cd <= 0 && (reach || walled)) {
       m.atk_t = 0; m.struck = false;
-      if (arms_left.length) {
+      if (m.kind.smash && arms_left.length) {
+        m.atk_kind = 'smash'; m.atk_rate = smash_rate; m.strike_at = smash_hit; m.atk_cd = smash_cd;
+      } else if (arms_left.length) {
         m.atk_kind = 'punch'; m.punch_arm = arms_left[Math.floor(Math.random() * arms_left.length)];
         m.atk_rate = punch_rate; m.strike_at = punch_hit; m.atk_dmg = mob_dmg; m.atk_cd = punch_cd;
       } else {
@@ -456,10 +519,14 @@ export function tick_mobs(dt) {
       m.atk_t = Math.min(1, m.atk_t + dt * m.atk_rate);
       if (!m.struck && m.atk_t >= m.strike_at) {
         m.struck = true;
-        if (m.atk_kind === 'headbutt') m.kb.add(new THREE.Vector3(m.dir[0] * 3, 0, m.dir[1] * 3));
-        if (plr_dist <= atk_range * 1.4 && Math.abs(player.pos.y - m.pos.y) < 1.4) hurt_plr(m.atk_dmg, m.pos);
+        if (m.atk_kind === 'smash') giant_smash(m);
+        else {
+          if (m.atk_kind === 'headbutt') m.kb.add(new THREE.Vector3(m.dir[0] * 3, 0, m.dir[1] * 3));
+          if (plr_dist <= atk_range * 1.4 * m.size && Math.abs(player.pos.y - m.pos.y) < 1.4 * m.size) hurt_plr(m.atk_dmg, m.pos);
+        }
       }
       if (m.atk_kind === 'punch') m[m.punch_arm].rotation.x = punch_curve(m.atk_t);
+      else if (m.atk_kind === 'smash') { for (const a of arms_left) m[a].rotation.x = smash_curve(m.atk_t); }
       else m.head.rotation.x += butt_curve(m.atk_t);
     }
 
@@ -469,7 +536,7 @@ export function tick_mobs(dt) {
     if (m.lie > 0.001) {
       m.root.rotation.order = 'YXZ';
       m.root.rotation.x = -m.lie * Math.PI / 2;
-      m.root.position.y += m.lie * 0.2;
+      m.root.position.y += m.lie * 0.2 * m.size;
       m.rig.rotation.y = m.roll_a;
     }
   }

@@ -3,7 +3,7 @@ import { spawn_pt } from './gen.js';
 import { key, solid_k } from './world.js';
 
 export const max_hp = 20;
-export const player = { pos: spawn_pt.clone(), vel: new THREE.Vector3(), on_ground: false, kb: new THREE.Vector3(), hp: max_hp, invuln: 0, flash_t: 0 };
+export const player = { pos: spawn_pt.clone(), vel: new THREE.Vector3(), on_ground: false, kb: new THREE.Vector3(), hp: max_hp, invuln: 0, flash_t: 0, shake: 0 };
 export const plr_half = 0.3, plr_h = 1.8, eye_h = 1.62;
 
 export function box_hits(p, half, height) {

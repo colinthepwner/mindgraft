@@ -81,6 +81,7 @@ function grain(buf, rate, vol, at) {
   src.stop(t0 + grain_len);
 }
 export function step(dt) {
+  if (player.shake) { cam_land(player.shake); player.shake = 0; }
   const f = (keys.KeyW ? 1 : 0) - (keys.KeyS ? 1 : 0);
   const s = (keys.KeyD ? 1 : 0) - (keys.KeyA ? 1 : 0);
   const len = Math.hypot(f, s) || 1;
