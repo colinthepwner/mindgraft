@@ -1,0 +1,77 @@
+:root {
+  --u: 3px;
+
+  --crosshair-opacity: 1;
+  --hotbar-bottom: 4;
+
+  --overlay-dim: rgba(0, 0, 0, .55);
+}
+
+html, body {
+  margin: 0; height: 100%; overflow: hidden;
+  background: #000;
+}
+canvas { display: block; }
+
+#overlay {
+  position: fixed; inset: 0;
+  background: var(--overlay-dim);
+  cursor: pointer;
+}
+
+#cross {
+  position: fixed; left: 50%; top: 50%;
+  width: calc(16 * var(--u)); height: calc(16 * var(--u));
+  margin: calc(-8 * var(--u)) 0 0 calc(-8 * var(--u));
+  background: url(crosshair.png) 0 0 / 100% 100% no-repeat;
+  image-rendering: pixelated;
+  opacity: var(--crosshair-opacity);
+  mix-blend-mode: difference;
+  pointer-events: none;
+}
+
+#hotbar {
+  position: fixed; bottom: calc(var(--hotbar-bottom) * var(--u)); left: 50%;
+  display: flex;
+}
+#hearts {
+  position: fixed; bottom: calc((var(--hotbar-bottom) + 21) * var(--u));
+  width: calc(81 * var(--u)); height: calc(9 * var(--u));
+  pointer-events: none;
+}
+#hearts canvas { width: 100%; height: 100%; image-rendering: pixelated; display: block; }
+
+#hurt {
+  position: fixed; inset: 0; pointer-events: none;
+  background: rgba(200, 0, 0, .35); opacity: 0;
+}
+
+.slot {
+  position: relative;
+  width: calc(20 * var(--u)); height: calc(20 * var(--u));
+  display: flex; align-items: center; justify-content: center;
+  background: url(slot.png) 0 0 / 100% 100% no-repeat;
+  image-rendering: pixelated;
+}
+.slot + .slot { margin-left: calc(-1 * var(--u)); }
+.slot.sel { background-image: url(slot-selected.png); position: relative; z-index: 1; }
+.slot canvas { width: calc(16 * var(--u)); height: calc(16 * var(--u)); image-rendering: auto; }
+.slot canvas.count {
+  position: absolute; left: 0; top: 0;
+  width: calc(20 * var(--u)); height: calc(20 * var(--u));
+  image-rendering: pixelated; pointer-events: none;
+}
+
+#craft {
+  position: fixed; display: none; z-index: 15;
+  padding: calc(8 * var(--u));
+  background: rgba(24, 24, 24, .92);
+  border: var(--u) solid #5a5a5a;
+  user-select: none;
+}
+#craft .row { display: flex; align-items: center; gap: calc(8 * var(--u)); margin-bottom: calc(8 * var(--u)); }
+#craft .row:last-child { margin-bottom: 0; }
+#craft .grid { display: grid; padding: 0 var(--u) var(--u) 0; }
+#craft .slot + .slot { margin-left: 0; }
+#craft .arrow { width: calc(12 * var(--u)); height: calc(9 * var(--u)); image-rendering: pixelated; }
+#held_item.slot { position: fixed; z-index: 16; display: none; pointer-events: none; background: none; }

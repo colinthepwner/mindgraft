@@ -1,0 +1,91 @@
+import './blocks.js';
+import './gfx.js';
+import './sound.js';
+import './world.js';
+import './gen.js';
+import './fx.js';
+import './player.js';
+import './sky.js';
+import './mob_model.js';
+import './mob.js';
+import './hud.js';
+import './drops.js';
+import './support.js';
+import './mining.js';
+import './you.js';
+import './input.js';
+import './craft.js';
+import './move.js';
+import { tick_anims } from './blocks.js';
+import { craft_tick } from './craft.js';
+import { tick_drops } from './drops.js';
+import { tick_blood, tick_chips } from './fx.js';
+import { camera, renderer, scene } from './gfx.js';
+import { hud_tick } from './hud.js';
+import { pitch, sel_box, view, yaw } from './input.js';
+import { tick_mining } from './mining.js';
+import { tick_mobs } from './mob.js';
+import { tick_pieces } from './mob_model.js';
+import { step } from './move.js';
+import { eye_h, eye_pos, look_dir, player } from './player.js';
+import { tick_ocean, tick_sky } from './sky.js';
+import { move_ears } from './sound.js';
+import { tick_falling } from './support.js';
+import { ray_blocks, remesh } from './world.js';
+import { bob_pace, dip, cam_roll, me, tick_cam_feel, tick_held, tick_me } from './you.js';
+
+let last = performance.now();
+function frame(now) {
+  const dt = Math.min((now - last) / 1000, 0.05);
+  last = now;
+  if (document.pointerLockElement) step(dt);
+  player.invuln = Math.max(0, player.invuln - dt);
+  player.flash_t = Math.max(0, player.flash_t - dt * 3);
+  hud_tick();
+
+  tick_mobs(dt);
+  tick_chips(dt);
+  tick_pieces(dt);
+  tick_blood(dt);
+  tick_drops(dt);
+  tick_falling(dt);
+  remesh();
+  tick_me(dt);
+  tick_held(dt);
+  eye_pos.set(player.pos.x, player.pos.y + eye_h, player.pos.z);
+  look_dir.set(-Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch));
+  move_ears(eye_pos, look_dir);
+  me.root.visible = view !== 0;
+  if (view === 0) {
+    camera.position.copy(eye_pos);
+    camera.rotation.set(pitch, yaw, 0);
+
+    const k = me.swing / 0.6, ph = me.phase * bob_pace;
+    camera.position.x += Math.cos(yaw) * Math.sin(ph) * 0.012 * k;
+    camera.position.z -= Math.sin(yaw) * Math.sin(ph) * 0.012 * k;
+    camera.position.y -= Math.cos(ph) ** 2 * 0.025 * k;
+    camera.rotation.z = Math.sin(ph) * 0.01 * k;
+    camera.rotation.x += Math.cos(ph - 0.2) ** 2 * 0.015 * k;
+    tick_cam_feel(dt);
+    camera.position.y += dip;
+    camera.rotation.z += cam_roll;
+  } else {
+    const dir = view === 1 ? look_dir.clone().negate() : look_dir.clone();
+    const wall = ray_blocks(eye_pos, dir, 4);
+    const dist = wall ? Math.max(0.3, wall.dist - 0.3) : 4;
+    camera.position.copy(eye_pos).addScaledVector(dir, dist);
+    if (view === 1) camera.rotation.set(pitch, yaw, 0);
+    else camera.rotation.set(-pitch, yaw + Math.PI, 0);
+  }
+  const target = document.pointerLockElement ? ray_blocks(eye_pos, look_dir, 6) : null;
+  sel_box.visible = !!target;
+  if (target) sel_box.position.set(target.x, target.y, target.z);
+  tick_mining(dt, target);
+  tick_anims(now / 1000);
+  tick_ocean();
+  tick_sky(now / 1000);
+  craft_tick();
+  renderer.render(scene, camera);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
