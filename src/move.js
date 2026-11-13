@@ -1,8 +1,7 @@
 import { blks } from './blocks.js';
 import { world_sz, spawn_pt } from './gen.js';
 import { keys, yaw } from './input.js';
-import { jump_v, walk_spd, collides, player } from './player.js';
-import { sea_top, water_id } from './sky.js';
+import { jump_v, walk_spd, plr_half, collides, player } from './player.js';
 import { jump_vol, land_lead, land_pitch, step_hp, step_pitch, step_vol, takeoff_pitch, audio, fall_min, land_hit, pick_snd, play_half, play_snd, spatial } from './sound.js';
 import { grav, world_bot, key, solid_at, world } from './world.js';
 import { cam_land, cam_hop } from './you.js';
@@ -113,6 +112,10 @@ export function step(dt) {
     }
   }
 
+  const e_lo = -world_sz / 2 - 0.5 + plr_half, e_hi = world_sz / 2 - 0.5 - plr_half;
+  if (player.pos.x < e_lo || player.pos.x > e_hi) { player.pos.x = Math.min(e_hi, Math.max(e_lo, player.pos.x)); player.kb.x = 0; }
+  if (player.pos.z < e_lo || player.pos.z > e_hi) { player.pos.z = Math.min(e_hi, Math.max(e_lo, player.pos.z)); player.kb.z = 0; }
+
   if (!jump_snd && !player.on_ground && player.vel.y < -fall_min) {
     let by = Math.round(player.pos.y) - 1, under = null;
     while (by >= world_bot && !(under = solid_at(Math.round(player.pos.x), by, Math.round(player.pos.z)) && world.get(key(Math.round(player.pos.x), by, Math.round(player.pos.z))))) by--;
@@ -146,6 +149,5 @@ export function step(dt) {
   } else if ((air_t += dt) > 0.15) step_acc = step_len * 0.6;
   if (player.on_ground) air_t = 0;
 
-  const outside = Math.abs(player.pos.x) > world_sz / 2 || Math.abs(player.pos.z) > world_sz / 2;
-  if (player.pos.y < -30 || (water_id && outside && player.pos.y < sea_top - 2)) { player.pos.copy(spawn_pt); player.vel.set(0, 0, 0); jump_snd = null; }
+  if (player.pos.y < -30) { player.pos.copy(spawn_pt); player.vel.set(0, 0, 0); jump_snd = null; }
 }

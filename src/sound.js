@@ -1,7 +1,7 @@
 import { manifest } from './blocks.js';
 
 export const audio = new (window.AudioContext || window.webkitAudioContext)();
-const master_vol = 0.5;
+const master_vol = 0.25;
 const master = audio.createGain();
 master.gain.value = master_vol;
 master.connect(audio.destination);

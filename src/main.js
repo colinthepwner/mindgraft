@@ -28,7 +28,7 @@ import { tick_mobs } from './mob.js';
 import { tick_pieces } from './mob_model.js';
 import { step } from './move.js';
 import { eye_h, eye_pos, look_dir, player } from './player.js';
-import { tick_ocean, tick_sky } from './sky.js';
+import { tick_sky } from './sky.js';
 import { move_ears } from './sound.js';
 import { tick_falling } from './support.js';
 import { ray_blocks, remesh } from './world.js';
@@ -82,7 +82,6 @@ function frame(now) {
   if (target) sel_box.position.set(target.x, target.y, target.z);
   tick_mining(dt, target);
   tick_anims(now / 1000);
-  tick_ocean();
   tick_sky(now / 1000);
   craft_tick();
   renderer.render(scene, camera);

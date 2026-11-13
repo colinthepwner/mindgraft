@@ -102,8 +102,8 @@ await Promise.all(blk_names.map(async (name, i) => {
 export const blk_ids = Object.keys(blks).map(Number);
 export const base_id = blk_ids.find(id => blks[id].name === 'grass') ?? blk_ids[0];
 export const id_of = name => blk_ids.find(id => blks[id].name === name) ?? base_id;
-export const grass_id = id_of('grass'), dirt_id = id_of('dirt'), stone_id = id_of('stone');
-export const break_t = { dirt: 0.7, grass: 0.8, leaf: 0.3, log: 1.4, stone: 2.0, glass: 0.4 }, break_def = 1.0;
+export const grass_id = id_of('grass'), dirt_id = id_of('dirt'), stone_id = id_of('stone'), sand_id = id_of('sand');
+export const break_t = { dirt: 0.7, grass: 0.8, leaf: 0.3, log: 1.4, stone: 2.0, glass: 0.4, sand: 0.6 }, break_def = 1.0;
 const drop_map = new Map([[grass_id, dirt_id]]);
 const no_drop = new Set(['leaf']);
 export const drop_of = type => (no_drop.has(blks[type].name) || blks[type].plant) ? null : (drop_map.get(type) ?? type);

@@ -1,13 +1,12 @@
 import * as THREE from 'three';
 import { blks, blk_ids, anim_texs } from './blocks.js';
-import { hash } from './gen.js';
+import { col_top } from './world.js';
+import { hash, world_sz } from './gen.js';
 import { camera, scene } from './gfx.js';
-import { player } from './player.js';
 
 export const water_id = blk_ids.find(id => blks[id].name === 'water');
 export const sea_blk = -1, sea_top = sea_blk + 0.5, ocean_sz = 400;
 
-let ocean = null;
 if (water_id) {
   const src = blks[water_id].mats[2];
   const anim = anim_texs.find(a => a.tex === src.map);
@@ -16,16 +15,30 @@ if (water_id) {
   tile_tex.magFilter = THREE.NearestFilter; tile_tex.minFilter = THREE.NearestFilter;
   tile_tex.colorSpace = THREE.SRGBColorSpace;
   tile_tex.wrapS = tile_tex.wrapT = THREE.RepeatWrapping;
-  tile_tex.repeat.set(ocean_sz, ocean_sz);
   tile_tex.needsUpdate = true;
-  const ocean_mat = new THREE.MeshBasicMaterial({ map: tile_tex, transparent: src.transparent, opacity: src.opacity, alphaTest: src.alphaTest });
-  ocean = new THREE.Mesh(new THREE.PlaneGeometry(ocean_sz, ocean_sz), ocean_mat);
-  ocean.rotation.x = -Math.PI / 2;
-  ocean.position.y = sea_top;
-  scene.add(ocean);
-}
-export function tick_ocean() {
-  if (ocean) ocean.position.set(Math.floor(player.pos.x) + 0.5, sea_top, Math.floor(player.pos.z) + 0.5);
+  const pos = [], uv = [], idx = [];
+  const quad = (x0, z0, x1, z1) => {
+    const b = pos.length / 3;
+    pos.push(x0, sea_top, z0, x1, sea_top, z0, x0, sea_top, z1, x1, sea_top, z1);
+    uv.push(x0, z0, x1, z0, x0, z1, x1, z1);
+    idx.push(b, b + 2, b + 1, b + 1, b + 2, b + 3);
+  };
+  const lo = -world_sz / 2 - 0.5, hi = world_sz / 2 - 0.5, far = ocean_sz;
+  quad(-far, -far, far, lo); quad(-far, hi, far, far); quad(-far, lo, lo, hi); quad(hi, lo, far, hi);
+  for (let x = -world_sz / 2; x < world_sz / 2; x++) {
+    let run = null;
+    for (let z = -world_sz / 2; z <= world_sz / 2; z++) {
+      const wet = z < world_sz / 2 && col_top.get(`${x},${z}`) < sea_blk;
+      if (wet && run === null) run = z;
+      if (!wet && run !== null) { quad(x - 0.5, run - 0.5, x + 0.5, z - 0.5); run = null; }
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  geo.setIndex(idx);
+  geo.computeBoundingSphere();
+  scene.add(new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ map: tile_tex, transparent: src.transparent, opacity: src.opacity, alphaTest: src.alphaTest, side: THREE.DoubleSide })));
 }
 
 const sun_dir = new THREE.Vector3(0.45, 0.8, -0.4).normalize();

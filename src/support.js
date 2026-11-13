@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { blks, break_def, break_t, drop_of, cube_geo } from './blocks.js';
+import { blks, break_def, break_t, drop_of, cube_geo, dirt_id, grass_id, sand_id } from './blocks.js';
 import { spawn_drop } from './drops.js';
 import { chips } from './fx.js';
 import { scene } from './gfx.js';
@@ -22,10 +22,21 @@ function find_loose(cx, cz) {
   for (let x = cx - R; x <= cx + R; x++) for (let z = cz - R; z <= cz + R; z++) max_y = Math.max(max_y, col_top.get(`${x},${z}`) ?? world_bot);
   const H = max_y - world_bot + 1;
   const at = (xi, yi, zi) => (yi * W + zi) * W + xi;
-  const cost = new Uint8Array(W * W * H);
+  const cost = new Uint8Array(W * W * H), ty = new Uint8Array(W * W * H);
   for (let yi = 0; yi < H; yi++) for (let zi = 0; zi < W; zi++) for (let xi = 0; xi < W; xi++) {
     const b = world.get(key(cx - R + xi, world_bot + yi, cz - R + zi));
-    if (b && !blks[b.type].plant) cost[at(xi, yi, zi)] = blk_cost(b.type);
+    if (b && !blks[b.type].plant) { cost[at(xi, yi, zi)] = blk_cost(b.type); ty[at(xi, yi, zi)] = b.type; }
+  }
+
+  const loose = new Uint8Array(W * W * H);
+  for (let zi = 0; zi < W; zi++) for (let xi = 0; xi < W; xi++) {
+    let capped = null;
+    for (let yi = H - 1; yi >= 0; yi--) {
+      const i = at(xi, yi, zi);
+      if (!cost[i]) { capped = null; continue; }
+      if (capped === null) capped = ty[i] === grass_id;
+      if (ty[i] === sand_id || (ty[i] === dirt_id && !capped)) loose[i] = 1;
+    }
   }
   const dist = new Int16Array(W * W * H).fill(-1);
   const buckets = Array.from({ length: budget_u + 1 }, () => []);
@@ -47,11 +58,12 @@ function find_loose(cx, cz) {
       if (dist[i] !== d) continue;
       const xi = i % W, zi = Math.floor(i / W) % W, yi = Math.floor(i / (W * W));
       relax(xi, yi + 1, zi, d);
+      if (loose[i]) continue;
       for (const [dx, dz] of nbrs4) {
         const nx = xi + dx, nz = zi + dz;
         if (nx < 0 || nz < 0 || nx >= W || nz >= W) continue;
-        const c = cost[at(nx, yi, nz)];
-        if (c && d + c <= budget_u) relax(nx, yi, nz, d + c);
+        const ni = at(nx, yi, nz), c = cost[ni];
+        if (c && !loose[ni] && d + c <= budget_u) relax(nx, yi, nz, d + c);
       }
     }
   }

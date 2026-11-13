@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { blks, blk_ids, dirt_id, grass_id, stone_id } from './blocks.js';
+import { blks, blk_ids, dirt_id, grass_id, sand_id, stone_id } from './blocks.js';
 import { chunk_sz, min_cy, world_bot, col_top, dirt_keys, dirty, key, remesh, set_blk, solid_k, world } from './world.js';
 
 export const world_sz = 192, dirt_layers = 3;
@@ -18,18 +18,29 @@ function vnoise(x, z) {
   const bot = hash(ix, iz + 1) + (hash(ix + 1, iz + 1) - hash(ix, iz + 1)) * sx;
   return top + (bot - top) * sz;
 }
+
+const shore_w = 16, sand_w = 13, shore_lo = -4;
+function edge_dist(x, z) {
+  const d = Math.min(x + world_sz / 2, world_sz / 2 - 1 - x, z + world_sz / 2, world_sz / 2 - 1 - z);
+  return d + (vnoise(x / 7 + 50, z / 7 + 50) - 0.5) * 6;
+}
+const is_beach = (x, z) => edge_dist(x, z) < sand_w;
 function height_at(x, z) {
   const n = vnoise(x / hill_w, z / hill_w) * 0.75 + vnoise(x / (hill_w / 3), z / (hill_w / 3)) * 0.25;
   const stretched = Math.min(1, Math.max(0, (n - 0.25) / 0.5));
-  return Math.min(chunk_sz - 1, Math.round(stretched * hill_h));
+  const h0 = Math.min(chunk_sz - 1, Math.round(stretched * hill_h));
+  const d = edge_dist(x, z);
+  if (d >= shore_w) return h0;
+  const t = Math.max(0, d / shore_w), s = t * t * (3 - 2 * t);
+  return Math.round(shore_lo + (h0 - shore_lo) * s);
 }
 
 for (let x = -world_sz / 2; x < world_sz / 2; x++)
   for (let z = -world_sz / 2; z < world_sz / 2; z++) {
-    const h = height_at(x, z);
+    const h = height_at(x, z), beach = is_beach(x, z);
     col_top.set(`${x},${z}`, h);
     for (let y = h; y >= world_bot; y--) {
-      const type = y === h ? grass_id : y >= h - dirt_layers ? dirt_id : stone_id;
+      const type = y === h ? (beach ? sand_id : grass_id) : y >= h - dirt_layers ? (beach ? sand_id : dirt_id) : stone_id;
       world.set(key(x, y, z), { type });
       if (type === dirt_id) dirt_keys.add(key(x, y, z));
     }
@@ -49,6 +60,7 @@ if (log_id && leaf_id) {
     for (let z = -world_sz / 2 + 3; z < world_sz / 2 - 3; z++) {
       if (hash(x + 1000, z - 1000) > tree_chance) continue;
       if (Math.abs(x) < 4 && Math.abs(z) < 4) continue;
+      if (world.get(key(x, col_top.get(`${x},${z}`), z))?.type !== grass_id) continue;
       if (trunks.some(([tx, tz]) => Math.abs(tx - x) < tree_gap && Math.abs(tz - z) < tree_gap)) continue;
       trunks.push([x, z]);
       const h = col_top.get(`${x},${z}`);
